@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Travel Package to JSON Converter</title>
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- CDNs for client-side parsing libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+</head>
+<body>
+
+  <!-- Sticky Header -->
+  <header>
+    <div class="brand">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-compass"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+      <h1>Travel Package Parser</h1>
+      <span class="badge-version">v2.0 Client-Side</span>
+    </div>
+    
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span id="packageCountSpan" style="font-size: 0.8rem; color: var(--text-secondary); margin-right: 8px;">0 package(s) loaded</span>
+      <button class="btn btn-secondary" id="clearAllBtn" title="Clear all packages">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Clear All
+      </button>
+      <button class="btn" id="downloadAllBtn" title="Download all packages as combined JSON">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Download All Combined
+      </button>
+    </div>
+  </header>
+
+  <!-- Dashboard Container -->
+  <main class="dashboard">
+    
+    <!-- Sidebar Importer (Column 1) -->
+    <div class="sidebar">
+      <div>
+        <div class="section-title">Import Documents</div>
+        <!-- File Dropzone -->
+        <div class="dropzone" id="dropzone">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload-cloud"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+          <span>Drag & Drop files or <span class="dropzone-label-highlight">Browse</span></span>
+          <span style="font-size: 0.7rem; color: var(--text-muted);">Supports .pdf, .docx, .txt</span>
+          <input type="file" id="fileInput" style="display: none;" multiple accept=".txt,.pdf,.docx">
+        </div>
+      </div>
+
+      <!-- Text Pasting Box -->
+      <div class="paste-container">
+        <div class="section-title">Paste Raw Package</div>
+        <textarea id="pasteTextarea" class="paste-textarea" placeholder="Paste travel package text contents here (e.g. Trip Overview -> Journey -> What's Included)..."></textarea>
+        <button class="btn" id="convertPasteBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Convert Paste Text
+        </button>
+      </div>
+
+      <!-- Loaded package items list -->
+      <div>
+        <div class="section-title">Imported Packages</div>
+        <div class="doc-list" id="sidebarDocList">
+          <!-- Document items rendered here dynamically -->
+          <div class="empty-sidebar">No packages loaded yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Form Editor (Column 2) -->
+    <div class="main-content" id="mainArea">
+      <!-- Edit form rendered here dynamically, or shows empty state -->
+    </div>
+
+    <!-- Live Preview Panel (Column 3) -->
+    <div class="preview-panel">
+      <div class="preview-header">
+        <div class="preview-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code-2"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>
+          Live JSON Output
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" id="copyJsonBtn" style="padding: 6px 12px; font-size: 0.8rem;" title="Copy JSON code">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> Copy
+          </button>
+          <button class="btn" id="downloadActiveBtn" style="padding: 6px 12px; font-size: 0.8rem;" title="Download current JSON file">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Download
+          </button>
+        </div>
+      </div>
+      
+      <!-- Live updating Code output -->
+      <div class="json-viewer-container">
+        <pre><code id="liveJsonPre">{}</code></pre>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle-2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+    <span>Action successful!</span>
+  </div>
+
+  <!-- Status Footer -->
+  <footer>
+    <div>Travel Package Conversion Engine &copy; 2026. Built for strict travel JSON compliance.</div>
+    <div>Compliance: rules.md &amp; constants.md validated</div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="parser.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
