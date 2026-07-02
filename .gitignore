@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Local dev server (not needed on Vercel)
+server.js
+
 # Build outputs
 dist/
 build/
