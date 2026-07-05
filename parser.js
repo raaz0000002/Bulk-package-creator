@@ -423,6 +423,15 @@ function cleanText(text) {
   for (const [old, newVal] of Object.entries(replacements)) {
     result = result.split(old).join(newVal);
   }
+
+  // Markdown support: strip bold/heading markup so headings ("# **Trip Overview**"),
+  // day titles ("## **Day 1: ...**"), and labels ("**Title: ...**") match the same
+  // plain-text patterns as unformatted pasted documents. Bullet markers ("* item")
+  // use a single asterisk followed by a space, so removing literal "**"/"__" pairs
+  // never touches them.
+  result = result.split("**").join("").split("__").join("");
+  result = result.split("\n").map(line => line.replace(/^\s{0,3}#{1,6}\s+/, "")).join("\n");
+
   result = result.replace(/[ \t]+/g, " ");
   result = result.replace(/\n{3,}/g, "\n\n");
   return result.trim();
@@ -608,9 +617,23 @@ function mergeBullets(sectionText) {
 function sectionAsParagraphs(sectionText) {
   const cleaned = cleanText(sectionText);
   if (!cleaned) return "";
+  const rawLines = cleaned.split("\n");
+
+  // Text pasted from Google Docs (and similar rich-text editors) into a plain
+  // textarea usually keeps one paragraph per line with no blank line between
+  // them, unlike a hard-wrapped .txt/.md file. If there's no blank line
+  // anywhere in this section, treat every non-empty line as its own paragraph
+  // instead of merging them all into one; only fall back to blank-line-delimited
+  // merging (which also re-joins soft-wrapped lines) when blank lines are present.
+  const hasBlankLineBreaks = rawLines.some(line => line.trim() === "");
+  if (!hasBlankLineBreaks) {
+    const paragraphs = rawLines.map(l => l.trim()).filter(Boolean);
+    return paragraphs.join("\n\n").trim();
+  }
+
   const paragraphs = [];
   let current = [];
-  for (const line of cleaned.split("\n")) {
+  for (const line of rawLines) {
     const trimmed = line.trim();
     if (!trimmed) {
       if (current.length > 0) {
@@ -1367,7 +1390,9 @@ function parseItineraries(journeyText) {
 
     const dayNumber = parseInt(header[1], 10);
     const title = header[2].trim();
-    const lines = splitLines(block);
+    // Keep blank lines here (unlike splitLines) so paragraph breaks in the source
+    // document survive into the day's description instead of being merged into one.
+    const lines = block.split("\n").map(l => l.trim());
     const { data, metadataIndices } = getDayMetadata(lines);
 
     const startLine = data.start || "";
@@ -1390,7 +1415,7 @@ function parseItineraries(journeyText) {
     const endElevation = extractElevation(endLine);
     const elevation = endElevation !== null ? endElevation : extractElevation(startLine);
 
-    const activities = extractActivitiesFromText([...descLines, title].join(". "));
+    const activities = extractActivitiesFromText([...descLines.filter(Boolean), title].join(". "));
 
     const dayObj = {
       dayNumber,
