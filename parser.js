@@ -744,30 +744,56 @@ function resolveDepartureDates(manualDates = null, seasons = null) {
   return dedupePreserveOrder(output);
 }
 
+// Coordinates with explicit hemisphere letters: 27.8936° N, 86.8199° E
+const COORD_WITH_LETTERS_PATTERN = /(-?\d+(?:\.\d+)?)\s*°?\s*([NS])\s*,\s*(-?\d+(?:\.\d+)?)\s*°?\s*([EW])/i;
+// Bare signed decimal-degree pairs with no hemisphere letters: 27.7400403, 86.7125552
+// Requires >=2 decimal digits on both numbers so casual pairs like "4.5, 4.8" (ratings, etc.) don't match.
+const BARE_COORD_PATTERN = /(-?\d{1,3}\.\d{2,})\s*,\s*(-?\d{1,3}\.\d{2,})/;
+
 function parseCoordinateFromLine(line) {
   if (!line) return null;
-  const pattern = /(-?\d+(?:\.\d+)?)\s*°?\s*([NS])\s*,\s*(-?\d+(?:\.\d+)?)\s*°?\s*([EW])/i;
-  const m = pattern.exec(line);
-  if (!m) return null;
-  let lat = parseFloat(m[1]);
-  let lon = parseFloat(m[3]);
-  if (m[2].toUpperCase() === "S") lat = -lat;
-  if (m[4].toUpperCase() === "W") lon = -lon;
-  return { latitude: lat, longitude: lon };
+
+  const withLetters = COORD_WITH_LETTERS_PATTERN.exec(line);
+  if (withLetters) {
+    let lat = parseFloat(withLetters[1]);
+    let lon = parseFloat(withLetters[3]);
+    if (withLetters[2].toUpperCase() === "S") lat = -lat;
+    if (withLetters[4].toUpperCase() === "W") lon = -lon;
+    return { latitude: lat, longitude: lon };
+  }
+
+  const bare = BARE_COORD_PATTERN.exec(line);
+  if (bare) {
+    const lat = parseFloat(bare[1]);
+    const lon = parseFloat(bare[2]);
+    if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      return { latitude: lat, longitude: lon };
+    }
+  }
+
+  return null;
 }
 
 function extractElevation(line) {
   if (!line) return null;
   let elevationPart = String(line);
-  if (elevationPart.toLowerCase().includes("around")) {
-    const parts = elevationPart.split(/around/i);
+
+  // Strip out any matched coordinate segment first so its digits (e.g. the "7306"
+  // inside "86.7306") can never be mistaken for an elevation figure.
+  elevationPart = elevationPart
+    .replace(COORD_WITH_LETTERS_PATTERN, " ")
+    .replace(BARE_COORD_PATTERN, " ");
+
+  if (/(around|approx\.?|approximately|circa|~)/i.test(elevationPart)) {
+    const parts = elevationPart.split(/around|approx\.?|approximately|circa|~/i);
     elevationPart = parts[parts.length - 1];
   }
+
   const nums = elevationPart.match(/\b(?:\d{1,3}(?:,\d{3})+|\d{3,5})\b/g) || [];
   const cleanNums = [];
   for (const n of nums) {
     const val = parseInt(n.replace(/,/g, ""), 10);
-    if (!isNaN(val) && val >= 100 && val <= 9000) {
+    if (!isNaN(val) && val >= 100 && val <= 8849) {
       cleanNums.push(val);
     }
   }
@@ -1075,13 +1101,11 @@ function inferSubcategories(title, text) {
   }
 
   if (hasAny(["everest", "ebc", "khumbu"], titleText)) {
-    add("Expeditions (7000-8000m)", 14);
     add("Mountain & Sunrise Escapes", 12);
     add("Classic & Short Treks", 5);
   }
 
   if (hasAny(["annapurna", "abc", "poon hill", "mardi himal", "khopra", "mohare", "muldai"], titleText)) {
-    add("Expeditions (7000-8000m)", 11);
     add("Mountain & Sunrise Escapes", 13);
     add("Classic & Short Treks", 5);
   }
@@ -1249,14 +1273,6 @@ function dedupePreserveOrder(items) {
 }
 
 // Itinerary Parsing
-function parsePlaceName(line) {
-  if (!line) return null;
-  let value = line.replace(/^\s*(?:Start|End|Via)\s*:\s*/i, "").trim();
-  value = value.split("—")[0].split("-")[0].trim();
-  value = value.replace(/,\s*depending.*$/i, "").trim();
-  return value || null;
-}
-
 function getDayMetadata(lines) {
   const data = { start: null, end: null, via: [], duration: null, transport: null, accommodation: null, meals: null, note: null };
   const metadataIndices = new Set();
@@ -1289,6 +1305,54 @@ function getDayMetadata(lines) {
   return { data, metadataIndices };
 }
 
+// Real activity/experience verbs to look for in a day's title + description,
+// mapped to a fixed short (1-2 word) label so output is never a truncated,
+// incomplete-looking sentence fragment. Route logistics like
+// "Via: Monjo / Jorsale park" are NOT activities and must never appear here.
+const ACTIVITY_KEYWORD_LABELS = [
+  ["check-in", "Check-in"], ["check in", "Check-in"],
+  ["check-out", "Check-out"], ["check out", "Check-out"],
+  ["briefing", "Briefing"],
+  ["packing", "Packing"],
+  ["rest", "Rest"],
+  ["airport transfer", "Airport Transfer"],
+  ["transfer to", "Transfer"],
+  ["arrival in", "Arrival"], ["arrive in", "Arrival"],
+  ["landing in", "Landing"], ["land in", "Landing"],
+  ["walk to", "Walk"], ["walk towards", "Walk"],
+  ["climb to", "Climb"], ["climb towards", "Climb"],
+  ["trek to", "Trek"], ["trek towards", "Trek"],
+  ["hike", "Hike"],
+  ["fly to", "Flight"],
+  ["drive to", "Drive"],
+  ["descend to", "Descend"], ["descend towards", "Descend"],
+  ["explore", "Exploration"],
+  ["sightseeing", "Sightseeing"],
+  ["acclimatization", "Acclimatization"], ["acclimatize", "Acclimatization"],
+  ["adaptation", "Adaptation"],
+  ["journaling", "Journaling"],
+  ["reflection", "Reflection"],
+  ["mindfulness", "Mindfulness"],
+  ["meditation", "Meditation"]
+];
+
+const MAX_ACTIVITIES_PER_DAY = 5;
+
+function extractActivitiesFromText(text) {
+  if (!text) return null;
+  const lower = String(text).toLowerCase();
+
+  const matches = [];
+  for (const [keyword, label] of ACTIVITY_KEYWORD_LABELS) {
+    const idx = lower.indexOf(keyword);
+    if (idx !== -1) matches.push({ idx, label });
+  }
+  matches.sort((a, b) => a.idx - b.idx);
+
+  const deduped = dedupeActivityList(matches.map(m => m.label));
+  return deduped ? deduped.slice(0, MAX_ACTIVITIES_PER_DAY) : null;
+}
+
 function parseItineraries(journeyText) {
   const text = cleanText(journeyText);
   if (!text) return [];
@@ -1308,9 +1372,6 @@ function parseItineraries(journeyText) {
 
     const startLine = data.start || "";
     const endLine = data.end || "";
-    const viaLines = data.via || [];
-    const durationLine = data.duration || "";
-    const transportLine = data.transport || "";
     const accommodationLine = data.accommodation || "";
     const mealsLine = data.meals || "";
 
@@ -1322,36 +1383,14 @@ function parseItineraries(journeyText) {
     });
     const description = sectionAsParagraphs(descLines.join("\n")) || null;
 
-    let geopoint = parseCoordinateFromLine(endLine);
-    if (!geopoint && viaLines.length > 0) {
-      for (let j = viaLines.length - 1; j >= 0; j--) {
-        geopoint = parseCoordinateFromLine(viaLines[j]);
-        if (geopoint) break;
-      }
-    }
-    if (!geopoint) {
-      geopoint = parseCoordinateFromLine(startLine);
-    }
+    // End is the authoritative source for a day's location. Via points are never
+    // used for geopoint or elevation; Start is only a fallback when End has none.
+    const geopoint = parseCoordinateFromLine(endLine) || parseCoordinateFromLine(startLine);
 
-    const elevations = [];
-    [startLine, endLine, ...viaLines].forEach(line => {
-      const e = extractElevation(line);
-      if (e !== null) elevations.push(e);
-    });
-    const elevation = elevations.length > 0 ? Math.max(...elevations) : null;
+    const endElevation = extractElevation(endLine);
+    const elevation = endElevation !== null ? endElevation : extractElevation(startLine);
 
-    const activities = [];
-    if (durationLine) activities.push(durationLine);
-    if (transportLine) activities.push(transportLine);
-    if (viaLines.length > 0) {
-      const viaNames = viaLines.map(parsePlaceName).filter(Boolean);
-      if (viaNames.length > 0) {
-        activities.push("Via: " + viaNames.join(", "));
-      }
-    }
-    if (activities.length === 0) {
-      activities.push(title);
-    }
+    const activities = extractActivitiesFromText([...descLines, title].join(". "));
 
     const dayObj = {
       dayNumber,
@@ -1587,7 +1626,7 @@ function cleanPackage(obj) {
   const keepNullFields = new Set([
     "departureDates", "country", "province", "district", "cityOrVillage",
     "latitude", "longitude", "subcategories", "trips", "destinations", "seasons",
-    "mapImageUrl", "meals", "geopoint", "accommodation"
+    "mapImageUrl", "meals", "geopoint", "accommodation", "activities"
   ]);
 
   if (Array.isArray(obj)) {
