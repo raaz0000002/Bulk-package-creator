@@ -16,6 +16,7 @@ const liveJsonPre = document.getElementById('liveJsonPre');
 const copyJsonBtn = document.getElementById('copyJsonBtn');
 const downloadActiveBtn = document.getElementById('downloadActiveBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
+const refreshJsonBtn = document.getElementById('refreshJsonBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const toast = document.getElementById('toast');
 const packageCountSpan = document.getElementById('packageCountSpan');
@@ -47,6 +48,7 @@ convertPasteBtn.addEventListener('click', handlePaste);
 copyJsonBtn.addEventListener('click', copyActiveJson);
 downloadActiveBtn.addEventListener('click', downloadActiveJson);
 downloadAllBtn.addEventListener('click', downloadAllJson);
+refreshJsonBtn.addEventListener('click', refreshJsonPreview);
 clearAllBtn.addEventListener('click', clearAllPackages);
 
 // Notification helper
@@ -399,7 +401,7 @@ function renderActiveForm() {
             </div>
             <div class="form-group">
               <label>Seasons</label>
-              <div class="form-grid-4" style="gap: 10px; margin-top: 5px;">
+              <div class="form-grid-2" style="gap: 10px; margin-top: 5px;">
                 ${window.TravelParser.VALID_SEASONS.map(s => `
                   <label class="checklist-item" style="padding: 4px 0;">
                     <input type="checkbox" name="pkgSeasons" value="${s}" ${data.seasons.includes(s) ? 'checked' : ''}>
@@ -675,7 +677,17 @@ function renderItineraryCard(itinerary, index) {
 // Bind events to update state in real-time
 function bindFormEvents() {
   const pkg = appState.packages[appState.activeIndex];
-  const d = pkg.data;
+  // `pkg.data` gets reassigned to a brand-new object every time it's
+  // normalized (renderJsonPreview/syncStateAndPreview both do this), which
+  // happens right after this function binds its listeners. A plain
+  // `const d = pkg.data` would capture that soon-to-be-orphaned object, so
+  // every edit below would silently write to a copy nobody reads from.
+  // This proxy always reads/writes through the live `pkg.data`, whatever
+  // object it currently points to.
+  const d = new Proxy({}, {
+    get(_, prop) { return pkg.data[prop]; },
+    set(_, prop, value) { pkg.data[prop] = value; return true; }
+  });
 
   // 1. Text Inputs
   const updateTextField = (id, fieldName) => {
@@ -1035,6 +1047,7 @@ function bindFormEvents() {
         d.itineraries.splice(idx, 1);
         rebuildItineraryRoles();
         renderActiveForm(); // Redraw whole form to reset indices
+        syncStateAndPreview();
         return;
       }
 
@@ -1047,6 +1060,7 @@ function bindFormEvents() {
         dayData.activities = dayData.activities || [];
         dayData.activities.push("");
         renderActiveForm(); // Redraw
+        syncStateAndPreview();
         return;
       }
 
@@ -1057,9 +1071,10 @@ function bindFormEvents() {
         const card = removeActBtn.closest('.day-card');
         const idx = parseInt(card.getAttribute('data-index'), 10);
         const actIdx = parseInt(row.getAttribute('data-index'), 10);
-        
+
         d.itineraries[idx].activities.splice(actIdx, 1);
         renderActiveForm();
+        syncStateAndPreview();
       }
     });
   }
@@ -1083,6 +1098,7 @@ function bindFormEvents() {
       });
       rebuildItineraryRoles();
       renderActiveForm(); // Redraw to update forms indices
+      syncStateAndPreview();
     });
   }
 
@@ -1145,6 +1161,25 @@ function renderJsonPreview() {
   appState.packages[appState.activeIndex].data = currentData;
   const json = JSON.stringify(currentData, null, 2);
   liveJsonPre.innerHTML = highlightJson(json);
+}
+
+// Manual fallback: re-fires every form control's input/change event so any
+// field whose edit didn't propagate to state gets resynced, then re-renders
+// the JSON preview from scratch. Safety net for auto-update gaps.
+function refreshJsonPreview() {
+  if (appState.activeIndex === null || appState.packages.length === 0) {
+    showToast('No package selected', 'error');
+    return;
+  }
+  const controls = mainArea.querySelectorAll('input, select, textarea');
+  controls.forEach((el) => {
+    const evtType = (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'radio' || el.type === 'date')
+      ? 'change'
+      : 'input';
+    el.dispatchEvent(new Event(evtType, { bubbles: true }));
+  });
+  syncStateAndPreview();
+  showToast('JSON re-converted from current form data');
 }
 
 // Copy JSON text (wrapped in array to match output format)
