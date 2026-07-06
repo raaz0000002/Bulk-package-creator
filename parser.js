@@ -614,6 +614,22 @@ function mergeBullets(sectionText) {
   return bullets.map(b => b.replace(/\s+/g, " ").trim()).filter(b => b.length > 0);
 }
 
+function escapeHtmlEntities(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Wraps each paragraph in its own <p> tag. Plain "\n\n" only signals a paragraph
+// break to something that treats the field as preformatted text; a lot of
+// downstream rich-text renderers/CMS fields strip bare newlines instead. HTML
+// <p> tags are the one signal that both plain-text and rich-text consumers
+// render correctly, so this is used unconditionally, even for a single paragraph.
+function wrapParagraphsAsHtml(paragraphs) {
+  return paragraphs.map(p => `<p>${escapeHtmlEntities(p)}</p>`).join("");
+}
+
 function sectionAsParagraphs(sectionText) {
   const cleaned = cleanText(sectionText);
   if (!cleaned) return "";
@@ -628,7 +644,7 @@ function sectionAsParagraphs(sectionText) {
   const hasBlankLineBreaks = rawLines.some(line => line.trim() === "");
   if (!hasBlankLineBreaks) {
     const paragraphs = rawLines.map(l => l.trim()).filter(Boolean);
-    return paragraphs.join("\n\n").trim();
+    return wrapParagraphsAsHtml(paragraphs);
   }
 
   const paragraphs = [];
@@ -647,7 +663,7 @@ function sectionAsParagraphs(sectionText) {
   if (current.length > 0) {
     paragraphs.push(current.join(" ").trim());
   }
-  return paragraphs.join("\n\n").trim();
+  return wrapParagraphsAsHtml(paragraphs);
 }
 
 function extractDuration(value) {
