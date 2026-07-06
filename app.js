@@ -1085,16 +1085,25 @@ function bindFormEvents() {
         return;
       }
 
-      // Add day activity
+      // Add day activity: insert a blank row directly (like the other list
+      // editors) instead of pushing "" into the data model and re-rendering --
+      // normalizePackageData/dedupeActivityList drops empty activity strings,
+      // so a re-render right after push immediately erases the new blank row.
       const addActBtn = e.target.closest('.it-activity-add');
       if (addActBtn) {
-        const card = addActBtn.closest('.day-card');
-        const idx = parseInt(card.getAttribute('data-index'), 10);
-        const dayData = d.itineraries[idx];
-        dayData.activities = dayData.activities || [];
-        dayData.activities.push("");
-        renderActiveForm(); // Redraw
-        syncStateAndPreview();
+        const container = addActBtn.closest('.it-activities-list');
+        const actIdx = container.querySelectorAll('.list-editor-item').length;
+        const row = document.createElement('div');
+        row.className = 'list-editor-item';
+        row.setAttribute('data-index', actIdx);
+        row.innerHTML = `
+          <input type="text" class="form-control it-activity-val" value="">
+          <button class="list-editor-remove it-activity-remove" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </button>
+        `;
+        container.insertBefore(row, addActBtn);
+        row.querySelector('.it-activity-val').focus();
         return;
       }
 
