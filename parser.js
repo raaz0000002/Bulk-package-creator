@@ -741,6 +741,46 @@ function normalizeAccommodationEnum(value) {
   return null;
 }
 
+const MEAL_LABELS = ["Breakfast", "Lunch", "Dinner"];
+
+// Detects which of Breakfast/Lunch/Dinner are present in free-form itinerary
+// meals text (full words, single-letter abbreviations like "B, L, D", or a
+// combined token like "BLD") and returns them as a fixed-order, comma-joined
+// string ("Breakfast, Lunch, Dinner") so the checkbox UI and JSON output
+// always agree on format.
+function normalizeMealsValue(value) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const lower = raw.toLowerCase();
+  const found = new Set();
+
+  if (/\bbreakfast\b/.test(lower)) found.add("Breakfast");
+  if (/\blunch\b/.test(lower)) found.add("Lunch");
+  if (/\bdinner\b/.test(lower)) found.add("Dinner");
+
+  if (found.size === 0 && /\ball meals\b/.test(lower)) {
+    MEAL_LABELS.forEach(l => found.add(l));
+  }
+
+  if (found.size === 0) {
+    // Single-letter abbreviations: "BLD", "B/L/D", "B, L, D", "B & D", etc.
+    const tokens = lower.split(/[^a-z]+/).filter(Boolean);
+    for (const token of tokens) {
+      if (/^[bld]+$/.test(token)) {
+        if (token.includes("b")) found.add("Breakfast");
+        if (token.includes("l")) found.add("Lunch");
+        if (token.includes("d")) found.add("Dinner");
+      }
+    }
+  }
+
+  if (found.size === 0) return null;
+
+  return MEAL_LABELS.filter(l => found.has(l)).join(", ");
+}
+
 const SEASON_DEPARTURE_DATES = {
   "spring": "2026-03-01T00:00:00.000Z",
   "summer": "2026-06-01T00:00:00.000Z",
@@ -1445,7 +1485,7 @@ function parseItineraries(journeyText) {
       elevation,
       description,
       activities,
-      meals: mealsLine || null,
+      meals: normalizeMealsValue(mealsLine),
       accommodation: normalizeAccommodationEnum(accommodationLine),
       geopoint,
     };
@@ -1809,6 +1849,8 @@ window.TravelParser = {
   VALID_BUDGETS,
   VALID_TIERS,
   VALID_BADGES,
+  MEAL_LABELS,
+  normalizeMealsValue,
   extractPackagesFromText,
   cleanText,
   normalizeKey,

@@ -668,7 +668,18 @@ function renderItineraryCard(itinerary, index) {
         </div>
         <div class="form-group">
           <label>Meals</label>
-          <input type="text" class="form-control it-meals" value="${escapeHtml(itinerary.meals || '')}" placeholder="B, L, D, etc.">
+          <div class="it-meals-group" style="display: flex; gap: 12px; margin-top: 5px;">
+            ${window.TravelParser.MEAL_LABELS.map(meal => {
+              const normalized = window.TravelParser.normalizeMealsValue(itinerary.meals) || '';
+              const checked = new RegExp(`\\b${meal}\\b`, 'i').test(normalized);
+              return `
+                <label class="checklist-item" style="padding: 4px 0;">
+                  <input type="checkbox" class="it-meal-checkbox" data-meal="${meal}" ${checked ? 'checked' : ''}>
+                  <span>${meal}</span>
+                </label>
+              `;
+            }).join('')}
+          </div>
         </div>
       </div>
 
@@ -1029,8 +1040,6 @@ function bindFormEvents() {
       } else if (e.target.classList.contains('it-elevation')) {
         const val = parseInt(e.target.value, 10);
         dayData.elevation = isNaN(val) ? null : val;
-      } else if (e.target.classList.contains('it-meals')) {
-        dayData.meals = e.target.value.trim() || null;
       } else if (e.target.classList.contains('it-lat') || e.target.classList.contains('it-lon')) {
         const latVal = parseFloat(card.querySelector('.it-lat').value);
         const lonVal = parseFloat(card.querySelector('.it-lon').value);
@@ -1067,6 +1076,13 @@ function bindFormEvents() {
 
       if (e.target.classList.contains('it-accommodation')) {
         dayData.accommodation = e.target.value || null;
+        syncStateAndPreview();
+      } else if (e.target.classList.contains('it-meal-checkbox')) {
+        const checked = card.querySelectorAll('.it-meal-checkbox:checked');
+        const selected = Array.from(checked).map(cb => cb.getAttribute('data-meal'));
+        dayData.meals = selected.length > 0
+          ? window.TravelParser.MEAL_LABELS.filter(m => selected.includes(m)).join(', ')
+          : null;
         syncStateAndPreview();
       }
     });
