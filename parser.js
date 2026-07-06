@@ -626,8 +626,12 @@ function escapeHtmlEntities(text) {
 // downstream rich-text renderers/CMS fields strip bare newlines instead. HTML
 // <p> tags are the one signal that both plain-text and rich-text consumers
 // render correctly, so this is used unconditionally, even for a single paragraph.
+// The tags are joined with a blank line rather than concatenated directly: any
+// HTML renderer ignores whitespace between block-level tags, but this dashboard's
+// own textarea editor does not, so the blank line keeps paragraphs visually
+// separated here too instead of collapsing back into one clumped line.
 function wrapParagraphsAsHtml(paragraphs) {
-  return paragraphs.map(p => `<p>${escapeHtmlEntities(p)}</p>`).join("");
+  return paragraphs.map(p => `<p>${escapeHtmlEntities(p)}</p>`).join("\n\n");
 }
 
 function sectionAsParagraphs(sectionText) {

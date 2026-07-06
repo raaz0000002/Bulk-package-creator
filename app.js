@@ -53,12 +53,42 @@ clearAllBtn.addEventListener('click', clearAllPackages);
 
 // Notification helper
 function showToast(message, type = 'success') {
+  const colors = {
+    success: 'var(--accent-success)',
+    error: 'var(--accent-danger)',
+    warning: 'var(--accent-warning)'
+  };
   toast.querySelector('span').innerText = message;
-  toast.style.background = type === 'success' ? 'var(--accent-success)' : 'var(--accent-danger)';
+  toast.style.background = colors[type] || colors.error;
   toast.classList.add('show');
   setTimeout(() => {
     toast.classList.remove('show');
   }, 3000);
+}
+
+// Fields that should always be reviewed if missing. Not blocking -- the user can
+// keep editing/downloading regardless -- just a heads-up so a null value isn't
+// missed silently.
+const RECOMMENDED_FIELD_LABELS = {
+  subcategories: 'Subcategories',
+  trips: 'Trips',
+  destinations: 'Destinations'
+};
+
+function isFieldMissing(value) {
+  return value === null || value === undefined || (Array.isArray(value) && value.length === 0);
+}
+
+function warnAboutMissingFields() {
+  if (appState.activeIndex === null || !appState.packages[appState.activeIndex]) return;
+  const data = appState.packages[appState.activeIndex].data;
+  const missingLabels = Object.keys(RECOMMENDED_FIELD_LABELS)
+    .filter(key => isFieldMissing(data[key]))
+    .map(key => RECOMMENDED_FIELD_LABELS[key]);
+
+  if (missingLabels.length === 0) return;
+  const verb = missingLabels.length === 1 ? 'is' : 'are';
+  showToast(`${missingLabels.join(', ')} ${verb} missing`, 'warning');
 }
 
 function showLoading(show) {
@@ -133,6 +163,7 @@ async function handleFiles(fileList) {
     appState.activeIndex = appState.packages.length - newPackagesCount; // Select first newly added package
     updateUI();
     showToast(`Successfully imported ${newPackagesCount} package(s)`);
+    warnAboutMissingFields();
   }
 }
 
@@ -206,6 +237,7 @@ function handlePaste() {
     appState.activeIndex = appState.packages.length - parsedList.length; // select first pasted package
     updateUI();
     showToast(`Successfully converted ${parsedList.length} paste package(s)`);
+    warnAboutMissingFields();
   } catch (err) {
     console.error(err);
     showToast(`Error parsing paste: ${err.message}`, 'error');
@@ -258,6 +290,7 @@ function renderDocList() {
       if (e.target.closest('.doc-remove')) return;
       appState.activeIndex = index;
       updateUI();
+      warnAboutMissingFields();
     });
 
     // Remove button
@@ -279,6 +312,7 @@ function removePackage(index) {
   }
   updateUI();
   showToast("Package removed");
+  warnAboutMissingFields();
 }
 
 function normalizePackageData(data) {
