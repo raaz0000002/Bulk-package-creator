@@ -107,6 +107,7 @@ const VALID_TRIPS = [
 "mesokanto-la-pass-trek",
 "mohare-danda-trek",
 "mountain-bike-in-pokhara",
+"mountain-biking-multiple-countries",
 "muldai-view-point-trek",
 "namche-bazaar-trek",
 "nar-phu-to-upper-mustang-trek",
